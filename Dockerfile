@@ -2,8 +2,8 @@ FROM parseable/parseable:latest
 
 # ── Storage ────────────────────────────────────────────────────────────────────
 # local-store mode: no S3 / object storage required
-ENV P_FS_DIR=/parseable/data
-ENV P_STAGING_DIR=/parseable/staging
+ENV P_FS_DIR=/tmp/parseable/data
+ENV P_STAGING_DIR=/tmp/parseable/staging
 
 # ── Auth (override in Railway dashboard or railway.toml) ───────────────────────
 ENV P_USERNAME=admin
