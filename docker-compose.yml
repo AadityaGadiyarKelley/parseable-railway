@@ -1,0 +1,33 @@
+services:
+  parseable:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      P_ADDR: "0.0.0.0:8000"
+      P_USERNAME: admin
+      P_PASSWORD: admin
+      P_FS_DIR: /parseable/data
+      P_STAGING_DIR: /parseable/staging
+    volumes:
+      - parseable_data:/parseable/data
+      - parseable_staging:/parseable/staging
+
+  vector:
+    build:
+      context: ./vector
+      dockerfile: Dockerfile
+    ports:
+      - "9292:9292"
+      - "8686:8686"
+    environment:
+      PARSEABLE_URL: http://parseable:8000
+      P_USERNAME: admin
+      P_PASSWORD: admin
+      LOG_STREAM: railway-logs
+    depends_on:
+      - parseable
+
+volumes:
+  parseable_data:
+  parseable_staging:

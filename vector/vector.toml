@@ -1,0 +1,81 @@
+# Vector log shipper for Railway → Parseable
+# ─────────────────────────────────────────────────────────────────────────────
+# Architecture:
+#   Railway log drain (HTTP POST) ──► Vector (transforms) ──► Parseable (HTTP)
+#
+# Required env vars (set in Railway dashboard):
+#   PARSEABLE_URL   e.g. https://parseable-production.up.railway.app
+#   P_USERNAME      Parseable admin username (default: admin)
+#   P_PASSWORD      Parseable admin password
+#   LOG_STREAM      Parseable stream name (default: railway-logs)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Enable Vector's built-in API (health checks, metrics)
+[api]
+enabled = true
+address  = "0.0.0.0:8686"
+
+# ── Sources ───────────────────────────────────────────────────────────────────
+
+# Receive log events pushed by Railway's HTTP Log Drain.
+# Configure the drain in Railway: Settings → Log Drain → HTTP
+# Drain URL: https://<vector-service>.up.railway.app/logs
+[sources.railway_drain]
+type             = "http_server"
+address          = "0.0.0.0:${VECTOR_PORT:-9292}"
+path             = "/logs"
+method           = "POST"
+decoding.codec   = "json"
+
+# Vector's own internal logs — useful for verifying the pipeline is running.
+[sources.vector_internal]
+type = "internal_logs"
+
+# ── Transforms ────────────────────────────────────────────────────────────────
+
+# Normalise log events coming from the Railway drain.
+[transforms.normalize_drain]
+type   = "remap"
+inputs = ["railway_drain"]
+source = '''
+if !exists(.timestamp) {
+  .timestamp = format_timestamp!(now(), format: "%+")
+}
+if !exists(.message) {
+  .message = "(no message)"
+}
+'''
+
+[transforms.normalize_internal]
+type   = "remap"
+inputs = ["vector_internal"]
+source = '''
+.source    = "vector-internal"
+.timestamp = format_timestamp!(now(), format: "%+")
+'''
+
+# ── Sinks ─────────────────────────────────────────────────────────────────────
+
+# Forward all events to Parseable's HTTP ingest endpoint.
+# Parseable stream is auto-created on first ingest if it does not exist.
+[sinks.parseable]
+type    = "http"
+inputs  = ["normalize_drain", "normalize_internal"]
+uri     = "${PARSEABLE_URL}/api/v1/logstream/${LOG_STREAM:-railway-logs}"
+method  = "post"
+
+[sinks.parseable.encoding]
+codec = "json"
+
+[sinks.parseable.auth]
+strategy = "basic"
+user     = "${P_USERNAME:-admin}"
+password = "${P_PASSWORD:-admin}"
+
+# Batch up to 1 MiB or 5 seconds — whichever comes first.
+[sinks.parseable.batch]
+max_bytes    = 1048576
+timeout_secs = 5
+
+[sinks.parseable.request]
+headers = { "Content-Type" = "application/json" }
