@@ -43,7 +43,89 @@ app.use((req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
-  res.json({ message: "Todo API is running", todos: todos.length });
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; justify-content: center; padding: 40px 16px; }
+    .container { background: white; border-radius: 12px; padding: 32px; width: 100%; max-width: 480px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
+    .subtitle a { color: #6366f1; text-decoration: none; }
+    .input-row { display: flex; gap: 8px; margin-bottom: 24px; }
+    input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; outline: none; }
+    input:focus { border-color: #6366f1; }
+    button.add { background: #6366f1; color: white; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+    button.add:hover { background: #4f46e5; }
+    ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    li { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #eee; border-radius: 8px; }
+    li.done span { text-decoration: line-through; color: #aaa; }
+    li span { flex: 1; font-size: 0.95rem; }
+    button.toggle { background: none; border: 2px solid #6366f1; color: #6366f1; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 0.8rem; }
+    button.toggle:hover { background: #6366f1; color: white; }
+    button.del { background: none; border: 2px solid #f87171; color: #f87171; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 0.8rem; }
+    button.del:hover { background: #f87171; color: white; }
+    .empty { color: #bbb; text-align: center; padding: 24px 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Todo App</h1>
+    <p class="subtitle">Every action is logged to <a href="${process.env.PARSEABLE_UI_URL || '#'}" target="_blank">Parseable</a> via Vector</p>
+    <div class="input-row">
+      <input id="input" type="text" placeholder="Add a new todo..." />
+      <button class="add" onclick="addTodo()">Add</button>
+    </div>
+    <ul id="list"></ul>
+    <p class="empty" id="empty">No todos yet. Add one above!</p>
+  </div>
+  <script>
+    async function load() {
+      const res = await fetch('/todos');
+      const todos = await res.json();
+      render(todos);
+    }
+    function render(todos) {
+      const list = document.getElementById('list');
+      const empty = document.getElementById('empty');
+      list.innerHTML = '';
+      empty.style.display = todos.length ? 'none' : 'block';
+      todos.forEach(t => {
+        const li = document.createElement('li');
+        if (t.done) li.classList.add('done');
+        li.innerHTML = \`
+          <span>\${t.title}</span>
+          <button class="toggle" onclick="toggle(\${t.id})">\${t.done ? 'Undo' : 'Done'}</button>
+          <button class="del" onclick="del(\${t.id})">Delete</button>
+        \`;
+        list.appendChild(li);
+      });
+    }
+    async function addTodo() {
+      const input = document.getElementById('input');
+      const title = input.value.trim();
+      if (!title) return;
+      await fetch('/todos', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title}) });
+      input.value = '';
+      load();
+    }
+    async function toggle(id) {
+      await fetch('/todos/' + id, { method: 'PATCH' });
+      load();
+    }
+    async function del(id) {
+      await fetch('/todos/' + id, { method: 'DELETE' });
+      load();
+    }
+    document.getElementById('input').addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+    load();
+  </script>
+</body>
+</html>`);
 });
 
 app.get("/todos", (req, res) => {
