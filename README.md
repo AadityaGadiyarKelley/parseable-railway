@@ -3,6 +3,8 @@
 An open-source log observability stack you can deploy on Railway in minutes.  
 Includes **Parseable** (log storage + search UI), **Vector** (log shipper), and a **demo todo app** that sends logs automatically.
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/parseable-takehome)
+
 ## Architecture
 
 ```
