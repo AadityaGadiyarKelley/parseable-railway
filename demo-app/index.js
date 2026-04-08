@@ -1,4 +1,6 @@
 const express = require("express");
+const { Pool } = require("pg");
+
 const app = express();
 app.use(express.json());
 
@@ -6,9 +8,18 @@ const PORT = process.env.PORT || 3000;
 const VECTOR_URL = process.env.VECTOR_URL || "http://localhost:9292/logs";
 const SERVICE_NAME = process.env.SERVICE_NAME || "demo-app";
 
-// In-memory to-do list
-const todos = [];
-let nextId = 1;
+// ── Database ──────────────────────────────────────────────────────────────────
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id    SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      done  BOOLEAN NOT NULL DEFAULT false
+    )
+  `);
+}
 
 // ── Logger ────────────────────────────────────────────────────────────────────
 function log(level, message, extra = {}) {
@@ -19,9 +30,7 @@ function log(level, message, extra = {}) {
     timestamp: new Date().toISOString(),
     ...extra,
   };
-  // Print to stdout (visible in Railway logs)
   console.log(JSON.stringify(event));
-  // Ship to Vector → Parseable (fire and forget)
   fetch(VECTOR_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -128,46 +137,60 @@ app.get("/", (req, res) => {
 </html>`);
 });
 
-app.get("/todos", (req, res) => {
-  log("info", "Fetched all todos", { count: todos.length });
-  res.json(todos);
+app.get("/todos", async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM todos ORDER BY id");
+  log("info", "Fetched all todos", { count: rows.length });
+  res.json(rows);
 });
 
-app.post("/todos", (req, res) => {
+app.post("/todos", async (req, res) => {
   const { title } = req.body;
   if (!title) {
     log("warn", "Create todo failed - missing title");
     return res.status(400).json({ error: "title is required" });
   }
-  const todo = { id: nextId++, title, done: false };
-  todos.push(todo);
-  log("info", `Todo created: "${title}"`, { todo_id: todo.id });
-  res.status(201).json(todo);
+  const { rows } = await pool.query(
+    "INSERT INTO todos (title) VALUES ($1) RETURNING *",
+    [title]
+  );
+  log("info", `Todo created: "${title}"`, { todo_id: rows[0].id });
+  res.status(201).json(rows[0]);
 });
 
-app.patch("/todos/:id", (req, res) => {
-  const todo = todos.find((t) => t.id === Number(req.params.id));
-  if (!todo) {
+app.patch("/todos/:id", async (req, res) => {
+  const { rows } = await pool.query(
+    "UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *",
+    [req.params.id]
+  );
+  if (!rows.length) {
     log("warn", `Todo not found: id=${req.params.id}`);
     return res.status(404).json({ error: "not found" });
   }
-  todo.done = !todo.done;
-  log("info", `Todo toggled: "${todo.title}" → done=${todo.done}`, { todo_id: todo.id });
-  res.json(todo);
+  log("info", `Todo toggled: "${rows[0].title}" → done=${rows[0].done}`, { todo_id: rows[0].id, done: rows[0].done });
+  res.json(rows[0]);
 });
 
-app.delete("/todos/:id", (req, res) => {
-  const index = todos.findIndex((t) => t.id === Number(req.params.id));
-  if (index === -1) {
+app.delete("/todos/:id", async (req, res) => {
+  const { rows } = await pool.query(
+    "DELETE FROM todos WHERE id = $1 RETURNING *",
+    [req.params.id]
+  );
+  if (!rows.length) {
     log("warn", `Delete failed - todo not found: id=${req.params.id}`);
     return res.status(404).json({ error: "not found" });
   }
-  const [removed] = todos.splice(index, 1);
-  log("info", `Todo deleted: "${removed.title}"`, { todo_id: removed.id });
-  res.json({ deleted: removed });
+  log("info", `Todo deleted: "${rows[0].title}"`, { todo_id: rows[0].id });
+  res.json({ deleted: rows[0] });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  log("info", `Server started on port ${PORT}`);
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      log("info", `Server started on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to connect to database:", err.message);
+    process.exit(1);
+  });
