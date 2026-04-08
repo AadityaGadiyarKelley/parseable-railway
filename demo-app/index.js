@@ -170,6 +170,12 @@ app.patch("/todos/:id", async (req, res) => {
   res.json(rows[0]);
 });
 
+app.delete("/todos", async (_req, res) => {
+  await pool.query("DELETE FROM todos");
+  log("info", "All todos cleared");
+  res.json({ cleared: true });
+});
+
 app.delete("/todos/:id", async (req, res) => {
   const { rows } = await pool.query(
     "DELETE FROM todos WHERE id = $1 RETURNING *",
